@@ -4,6 +4,11 @@
 
 package wire
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 type ExportMetricsServiceRequest struct {
 	Node     *Node     `json:"node,omitempty"`
 	Metrics  []*Metric `json:"metrics,omitempty"`
@@ -56,6 +61,47 @@ type LabelValue struct {
 type Point struct {
 	Timestamp *Timestamp `json:"timestamp,omitempty"`
 	Value     PointValue `json:"value,omitempty"`
+}
+
+// MarshalJSON creates JSON formatted the same way as jsonpb so that the
+// OpenCensus service can correctly determine the underlying value type.
+func (p Point) MarshalJSON() ([]byte, error) {
+	switch d := p.Value.(type) {
+	case PointInt64Value:
+		return json.Marshal(&struct {
+			Timestamp *Timestamp `json:"timestamp,omitempty"`
+			Value     int64      `json:"int64Value,omitempty"`
+		}{
+			Timestamp: p.Timestamp,
+			Value:     d.Int64Value,
+		})
+	case *PointDoubleValue:
+		return json.Marshal(&struct {
+			Timestamp *Timestamp `json:"timestamp,omitempty"`
+			Value     float64    `json:"doubleValue,omitempty"`
+		}{
+			Timestamp: p.Timestamp,
+			Value:     d.DoubleValue,
+		})
+	case *PointDistributionValue:
+		return json.Marshal(&struct {
+			Timestamp *Timestamp         `json:"timestamp,omitempty"`
+			Value     *DistributionValue `json:"distributionValue,omitempty"`
+		}{
+			Timestamp: p.Timestamp,
+			Value:     d.DistributionValue,
+		})
+	case *PointSummaryValue:
+		return json.Marshal(&struct {
+			Timestamp *Timestamp    `json:"timestamp,omitempty"`
+			Value     *SummaryValue `json:"summaryValue,omitempty"`
+		}{
+			Timestamp: p.Timestamp,
+			Value:     d.SummaryValue,
+		})
+	}
+
+	return nil, fmt.Errorf("cannot marshal unknown type %T", p.Value)
 }
 
 type PointInt64Value struct {
