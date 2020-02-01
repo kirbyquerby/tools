@@ -2,12 +2,15 @@ package log_test
 
 import (
 	"context"
+	"io/ioutil"
 	stdlog "log"
 	"strings"
 	"testing"
 
 	tellog "golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/tag"
+
+	"github.com/rs/zerolog"
 )
 
 func init() {
@@ -73,6 +76,25 @@ func B_log_stdlib(b string) int {
 	return len(b)
 }
 
+func A_log_zerolog(logger zerolog.Logger, a int) int {
+	if a > 0 {
+		logger.Info().Msgf("a > 0 where a=%d", a)
+		_ = 10 * 12
+	}
+	logger.Info().Msg("calling b")
+	return B_log_zerolog(logger, "Called from A")
+}
+
+func B_log_zerolog(logger zerolog.Logger, b string) int {
+	b = strings.ToUpper(b)
+	logger.Info().Msgf("b uppercased, so lowercased where len_b=%d", len(b))
+	if len(b) > 1024 {
+		b = strings.ToLower(b)
+		logger.Info().Msgf("b > 1024, so lowercased where b=%s", b)
+	}
+	return len(b)
+}
+
 func BenchmarkNoTracingNoMetricsNoLogging(b *testing.B) {
 	b.ReportAllocs()
 	values := []int{0, 10, 20, 100, 1000}
@@ -85,26 +107,33 @@ func BenchmarkNoTracingNoMetricsNoLogging(b *testing.B) {
 	}
 }
 
-func BenchmarkLoggingNoExporter(b *testing.B) {
+func RunBenchmark(b *testing.B, f func(int) int) {
 	b.ReportAllocs()
 	values := []int{0, 10, 20, 100, 1000}
 	for i := 0; i < b.N; i++ {
 		for _, value := range values {
-			if g := A_log(context.TODO(), value); g <= 0 {
+			if g := f(value); g <= 0 {
 				b.Fatalf("Unexpected got g(%d) <= 0", g)
 			}
 		}
 	}
 }
 
+func BenchmarkLoggingNoExporter(b *testing.B) {
+	ctx := context.TODO()
+	RunBenchmark(b, func(a int) int {
+		return A_log(ctx, a)
+	})
+}
+
 func BenchmarkLoggingStdlib(b *testing.B) {
-	b.ReportAllocs()
-	values := []int{0, 10, 20, 100, 1000}
-	for i := 0; i < b.N; i++ {
-		for _, value := range values {
-			if g := A_log_stdlib(value); g <= 0 {
-				b.Fatalf("Unexpected got g(%d) <= 0", g)
-			}
-		}
-	}
+	RunBenchmark(b, A_log_stdlib)
+}
+
+func BenchmarkLoggingZerolog(b *testing.B) {
+	logger := zerolog.New(ioutil.Discard)
+	b.ResetTimer()
+	RunBenchmark(b, func(a int) int {
+		return A_log_zerolog(logger, a)
+	})
 }
